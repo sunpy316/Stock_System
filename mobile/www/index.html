@@ -1418,11 +1418,44 @@ createApp({
     const h = (location.hash || '').replace('#', '');
     if (['strategy', 'watch', 'data', 'users'].indexOf(h) >= 0) this.switchView(h);
     else this.applyTemplate();
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.checkAuthSession();
+    });
+    this._authTimer = setInterval(() => this.checkAuthSession(), 60000);
   },
   methods: {
+    isTokenExpired(token) {
+      if (!token) return true;
+      try {
+        const b64 = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(b64));
+        return !payload.exp || payload.exp <= Math.floor(Date.now() / 1000);
+      } catch (e) {
+        return true;
+      }
+    },
+    async checkAuthSession() {
+      const token = localStorage.getItem('stock_token');
+      if (token && this.isTokenExpired(token)) {
+        localStorage.removeItem('stock_token');
+        this.loginErr = '登录已过期，请重新登录';
+        this.loginOpen = true;
+        return;
+      }
+      if (this.currentUser && this.currentUser.auth_enabled) {
+        try { await this.api('/api/v1/auth/me'); } catch (e) {}
+      }
+    },
     async api(path, opts) {
       const o = { ...(opts || {}) };
       const token = localStorage.getItem('stock_token');
+      if (token && path !== '/api/v1/auth/login' && this.isTokenExpired(token)) {
+        localStorage.removeItem('stock_token');
+        this.loginErr = '登录已过期，请重新登录';
+        this.loginOpen = true;
+        throw new Error('登录已过期，请重新登录');
+      }
       o.headers = { ...(o.headers || {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) };
       const r = await fetch(API + path, o);
       if (r.status === 401 && path !== '/api/v1/auth/login') {
