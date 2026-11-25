@@ -2355,9 +2355,12 @@ createApp({
       this._fullChart.setOption({
         animation: false,
         grid: grids,
-        axisPointer: isMob ? { show: false } : { link: [{ xAxisIndex: 'all' }] },
-        tooltip: isMob ? { show: false } : {
+        axisPointer: { link: [{ xAxisIndex: 'all' }] },
+        tooltip: {
           trigger: 'axis',
+          triggerOn: isMob ? 'click' : 'mousemove|click',
+          confine: true,
+          axisPointer: { type: 'cross' },
           axisPointer: { type: 'cross' },
           backgroundColor: 'rgba(255,255,255,.97)',
           borderColor: '#E3E8EF',
@@ -2478,6 +2481,12 @@ createApp({
         ],
         series: series
       }, true);
+      if (isMob && !this._fullChart._hasSwipeHide) {
+        this._fullChart._hasSwipeHide = true;
+        this._fullChart.on('datazoom', () => {
+          this._fullChart && this._fullChart.dispatchAction({ type: 'hideTip' });
+        });
+      }
       this._fullChart.resize();
     },
     qLabel(p) {
