@@ -1,0 +1,32 @@
+# Python / Cache / Logs / Backups
+__pycache__/
+*.py[cod]
+venv/
+cache/
+logs/
+db/
+.backup_*/
+
+# Mobile build artifacts & dependencies
+mobile/node_modules/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/ios/App/Pods/
+mobile/ios/App/build_derived/
+*.apk
+*.ipa
+*.zip
+.DS_Store
+
+# Sensitive / local-only / one-off scripts
+deploy/windows/server.txt
+*.bat
+backfill_*.sh
+fill_*.sh
+ceshi.sh
+import_big.sh
+README_*.md
+deploy/linux/README-*.md
+deploy/linux/閮ㄧ讲*

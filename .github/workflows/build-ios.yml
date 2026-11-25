@@ -1,0 +1,116 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies and sync Capacitor iOS
+        run: |
+          npm install --no-audit --no-fund
+          npx cap sync ios
+
+      - name: Build IPA (unsigned by default, or signed if Apple secrets exist)
+        env:
+          IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+          IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+          IOS_PROVISION_BASE64: ${{ secrets.IOS_PROVISION_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          if [ -n "$IOS_P12_BASE64" ] && [ -n "$IOS_PROVISION_BASE64" ]; then
+            echo "Building signed IPA..."
+            mkdir -p signing
+            echo "$IOS_P12_BASE64" | base64 --decode > signing/cert.p12
+            echo "$IOS_PROVISION_BASE64" | base64 --decode > signing/profile.mobileprovision
+
+            security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+            security import signing/cert.p12 -k build.keychain -P "$IOS_P12_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i signing/profile.mobileprovision))
+            TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print TeamIdentifier:0" /dev/stdin <<< $(security cms -D -i signing/profile.mobileprovision))
+            cp signing/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID".mobileprovision
+
+            cat > signing/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.stocksystem.app</key>
+              <string>${PROFILE_UUID}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+            xcodebuild \
+              -workspace ios/App/App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -archivePath build_out/App.xcarchive \
+              DEVELOPMENT_TEAM="$TEAM_ID" \
+              CODE_SIGN_STYLE=Manual \
+              PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+              archive
+
+            xcodebuild -exportArchive \
+              -archivePath build_out/App.xcarchive \
+              -exportOptionsPlist signing/ExportOptions.plist \
+              -exportPath build_out/ipa
+
+            mv build_out/ipa/*.ipa Stock_System_iOS_signed.ipa
+          else
+            echo "Building unsigned IPA (no Apple secrets configured)..."
+            xcodebuild \
+              -workspace ios/App/App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build_derived \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build
+            mkdir -p ipa_stage/Payload
+            cp -R build_derived/Build/Products/Release-iphoneos/App.app ipa_stage/Payload/
+            cd ipa_stage && zip -r ../Stock_System_iOS_unsigned.ipa Payload
+          fi
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stock_System_iOS_IPA
+          path: mobile/Stock_System_iOS_*.ipa
+          if-no-files-found: error

@@ -1,0 +1,9 @@
+# 与打包机器一致的版本，先装这些再启动
+fastapi
+uvicorn
+SQLAlchemy
+PyMySQL
+pandas==2.3.3
+akshare
+APScheduler
+openpyxl

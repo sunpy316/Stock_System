@@ -1,0 +1,32 @@
+[Unit]
+Description=A股智能选股系统后端 (FastAPI)
+Documentation=file:///opt/stocksystem/deploy/linux/README-Linux部署.md
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+# 建议用专用低权限用户运行；若不想新建用户，把下面两行改成部署所用用户，
+# 并相应把 /opt/stocksystem 的属主改过去（chown -R 用户:用户 /opt/stocksystem）
+User=stock
+Group=stock
+WorkingDirectory=/opt/stocksystem
+# 用虚拟环境里的 python 直接以模块方式拉起 uvicorn
+# 绑定 127.0.0.1：仅本机可直连，外部统一走 nginx 反代（更安全）
+ExecStart=/opt/stocksystem/venv/bin/python -m uvicorn stock_system.api.main:app --host 127.0.0.1 --port 8800
+# 数据库连接/采集参数：代码优先读环境变量，可在此覆盖，也可改 stock_system/config.py
+Environment=STOCK_DB_HOST=127.0.0.1
+Environment=STOCK_DB_PORT=3306
+Environment=STOCK_DB_USER=stock_app
+Environment=STOCK_DB_PASSWORD=StockSys_ChangeMe
+Environment=STOCK_DB_NAME=stock_system
+# 进程异常退出自动拉起
+Restart=on-failure
+RestartSec=5
+# 日志交给 journald（journalctl -u stock-system 查看）
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stock-system
+
+[Install]
+WantedBy=multi-user.target

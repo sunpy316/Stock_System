@@ -1,0 +1,9 @@
+# A股智能选股系统 依赖（与 Windows 开发机一致的版本，先装这些再启动）
+fastapi==0.162.0
+uvicorn==0.54.0
+SQLAlchemy==2.1.6
+PyMySQL==1.2.3
+pandas==3.1.0
+akshare==1.20.22
+APScheduler==3.11.3
+openpyxl==3.1.5
