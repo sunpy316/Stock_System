@@ -44,6 +44,7 @@ if ($RunId) {
     Invoke-WebRequest -Uri "https://nightly.link/sunpy316/Stock_System/actions/runs/$RunId/Stock_System_iOS_IPA.zip" -OutFile $zipPath -UseBasicParsing
     Expand-Archive -Path $zipPath -DestinationPath $OutDir -Force
     Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+    Get-ChildItem (Join-Path $OutDir "Stock_System_iOS_*.ipa") | ForEach-Object { $_.LastWriteTime = Get-Date }
     Write-Host "Updated Android APK & iOS IPA (Run $RunId) in $OutDir"
 } else {
     Write-Host "Android APK updated. iOS IPA build still in progress or unavailable via unauthenticated API."

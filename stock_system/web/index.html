@@ -410,24 +410,32 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
   select.strategy{flex:1;min-width:140px}
   .spacer{display:none}
   .sentiment-pill{width:100%;justify-content:space-between;font-size:11.5px}
-  .stamp{width:100%;text-align:left;font-size:11px}
-  .tabs{overflow-x:auto;padding:0 8px}
+  .stamp{flex:1;text-align:left;font-size:11px}
+  .tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0 8px;gap:2px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{white-space:nowrap;flex-shrink:0;padding:10px 12px}
   main{flex-direction:column}
   .left,.right{width:100%;flex:none;border-right:none;border-left:none;border-bottom:1px solid var(--border)}
   .center{min-width:0}
+  .page{padding:10px!important}
+  .card{overflow-x:auto}
   .result-bar{height:auto;flex-wrap:wrap;padding:8px 12px;gap:8px}
   .result-bar .stat,.result-bar .mini-btn{white-space:nowrap;margin-left:0!important}
   .result-bar .note{width:100%;margin-left:0;font-size:11px}
   .modal-box{max-width:96vw!important;max-height:92vh!important}
   .kline-page{position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;
-    padding:max(env(safe-area-inset-top,0px),12px) 10px calc(env(safe-area-inset-bottom,0px) + 48px)!important}
+    padding:max(env(safe-area-inset-top,0px),8px) 8px calc(env(safe-area-inset-bottom,0px) + 56px)!important}
   .kline-page-box{min-height:auto;overflow:visible!important;display:flex;flex-direction:column}
-  .kline-page-box .modal-body{overflow:visible!important;padding:12px!important}
+  .kline-page-box .modal-head{padding:10px 12px!important;gap:8px!important}
+  .kline-page-box .modal-body{overflow:visible!important;padding:10px 12px!important}
   .kl-body{flex-direction:column!important;gap:12px!important}
   .kl-main{min-width:0;width:100%!important;padding-right:0!important}
   .kl-side{flex:none!important;width:100%!important;max-height:none!important;overflow-y:visible!important;
     border-left:none!important;padding-left:0!important;border-top:1px solid var(--border);padding-top:12px}
   .kf-bar{flex-wrap:wrap!important;gap:6px!important}
+  .kf-chip-row{flex-wrap:wrap!important;gap:6px!important}
+  .kf-inp{width:96px!important}
+  .kf-chart{height:380px!important}
 }
 </style>
 </head>
@@ -876,10 +884,10 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
   <div class="kline-page" v-if="klineFull.visible"
        style="position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch">
     <div class="kline-page-box">
-      <div class="modal-head" style="display:flex;align-items:center;gap:10px">
-        <button v-if="!klineOnly" class="btn" style="height:28px;padding:0 12px" @click="closeFullKline">← 返回</button>
-        <span>{{ klineFull.name || klineFull.code }}（{{ klineFull.code }}）· 日K线（前复权）</span>
-        <span class="dh-score" v-if="selected && !selected.external" style="margin-left:auto">评分<b>{{ num(selected.score, 1) }}</b></span>
+      <div class="modal-head" style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
+        <button v-if="!klineOnly" class="btn" style="height:28px;padding:0 10px;white-space:nowrap;flex-shrink:0" @click="closeFullKline">← 返回</button>
+        <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">{{ klineFull.name || klineFull.code }}（{{ klineFull.code }}）· 日K前复权</span>
+        <span class="dh-score" v-if="selected && !selected.external" style="margin-left:auto;white-space:nowrap;flex-shrink:0">评分<b>{{ num(selected.score, 1) }}</b></span>
       </div>
       <div class="modal-body kl-body">
         <div class="kl-main">
@@ -930,7 +938,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
                    @keyup.enter="addCustomPeriod($event, i)">
           </div>
         </div>
-        <div ref="fullchart" :style="{ width: '100%', height: klineOpts.sub ? '520px' : '468px' }"></div>
+        <div ref="fullchart" class="kf-chart" :style="{ width: '100%', height: klineOpts.sub ? '520px' : '468px' }"></div>
         <div class="kf-tip">滚轮缩放、拖拽平移；下方滑块拖到最左即可看到最早一根 K 线。悬浮可看开收低高、成交量与成交额。</div>
         </div>
 
