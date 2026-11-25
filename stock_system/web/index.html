@@ -2240,6 +2240,7 @@ createApp({
       }));
       const yAxis = grids.map((g, i) => ({
         gridIndex: i, scale: true, position: 'right',
+        splitNumber: i === 0 ? 5 : 2,
         splitLine: i === 0 ? { lineStyle: { color: '#EEF2F6' } } : { show: false },
         axisLine: { show: false }, axisTick: { show: false },
         axisLabel: {
