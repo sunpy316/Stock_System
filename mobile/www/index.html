@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="智能选股">
@@ -403,7 +403,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 .sentiment-pill .up{color:var(--up);font-weight:600}
 .sentiment-pill .dn{color:var(--down);font-weight:600}
 @media (max-width: 768px){
-  body{height:auto;min-height:100vh;overflow-y:auto}
+  body{height:auto;min-height:100vh;overflow-y:auto;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   #app{overflow:visible}
   header{height:auto;flex-wrap:wrap;padding:10px 12px;gap:8px}
   .toolbar{width:100%;flex-wrap:wrap}
@@ -419,11 +419,14 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
   .result-bar .stat,.result-bar .mini-btn{white-space:nowrap;margin-left:0!important}
   .result-bar .note{width:100%;margin-left:0;font-size:11px}
   .modal-box{max-width:96vw!important;max-height:92vh!important}
-  .kline-page{position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto}
-  .kline-page-box{min-height:100vh;display:flex;flex-direction:column}
+  .kline-page{position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:max(env(safe-area-inset-top,0px),12px) 10px calc(env(safe-area-inset-bottom,0px) + 48px)!important}
+  .kline-page-box{min-height:auto;overflow:visible!important;display:flex;flex-direction:column}
+  .kline-page-box .modal-body{overflow:visible!important;padding:12px!important}
   .kl-body{flex-direction:column!important;gap:12px!important}
-  .kl-main{min-width:0;width:100%!important}
-  .kl-side{width:100%!important;border-left:none!important;padding-left:0!important;border-top:1px solid var(--border);padding-top:12px}
+  .kl-main{min-width:0;width:100%!important;padding-right:0!important}
+  .kl-side{flex:none!important;width:100%!important;max-height:none!important;overflow-y:visible!important;
+    border-left:none!important;padding-left:0!important;border-top:1px solid var(--border);padding-top:12px}
   .kf-bar{flex-wrap:wrap!important;gap:6px!important}
 }
 </style>
@@ -871,7 +874,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 
   <!-- 个股全功能详情页（集成K线、命中溯源、财务、快照与技术指标） -->
   <div class="kline-page" v-if="klineFull.visible"
-       style="position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto">
+       style="position:fixed;inset:0;z-index:80;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch">
     <div class="kline-page-box">
       <div class="modal-head" style="display:flex;align-items:center;gap:10px">
         <button v-if="!klineOnly" class="btn" style="height:28px;padding:0 12px" @click="closeFullKline">← 返回</button>
