@@ -2569,9 +2569,9 @@ createApp({
       const labels = items.map(i => this.qLabel(i.period));
       chart.setOption({
         animation: false,
-        grid: { left: 46, right: 40, top: 24, bottom: 20 },
+        grid: { left: 46, right: 36, top: 30, bottom: 20 },
         legend: {
-          top: 0, right: 2, itemWidth: 8, itemHeight: 8, itemGap: 8,
+          top: 2, left: 'center', itemWidth: 8, itemHeight: 8, itemGap: 10,
           textStyle: { fontSize: 9, color: '#6B7280' }
         },
         tooltip: {
@@ -2605,7 +2605,7 @@ createApp({
           },
           {
             type: 'value', name: '%',
-            nameTextStyle: { fontSize: 9, color: '#9CA3AF' },
+            nameTextStyle: { fontSize: 9, color: '#9CA3AF', padding: [0, -18, 0, 0] },
             axisLabel: { fontSize: 9, color: '#9CA3AF' },
             splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false }
           }
