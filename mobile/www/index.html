@@ -2174,20 +2174,32 @@ createApp({
         : (v >= 1e8 ? (v / 1e8).toFixed(2) + '亿'
           : v >= 1e4 ? (v / 1e4).toFixed(2) + '万' : v + '元');
 
-      // ---- 版式：主图 / 成交量 / (副图) / 滑块，高度按副图有无动态排 ----
+      const isMob = window.innerWidth <= 768;
+      // ---- 版式：主图 / 成交量 / (副图) / 滑块，高度按 PC/手机 及副图有无动态排 ----
       const grids = [];
-      const priceH = hasSub ? 250 : 322;
-      grids.push({ left: 66, right: 66, top: 14, height: priceH });
-      const volTop = 14 + priceH + 26;
-      grids.push({ left: 66, right: 66, top: volTop, height: 58 });
-      if (hasSub) grids.push({ left: 66, right: 66, top: volTop + 58 + 26, height: 74 });
+      const padL = isMob ? 8 : 66;
+      const padR = isMob ? 48 : 66;
+      if (isMob) {
+        const priceH = hasSub ? 170 : 224;
+        grids.push({ left: padL, right: padR, top: 10, height: priceH });
+        const volTop = 10 + priceH + 12;
+        const volH = hasSub ? 48 : 58;
+        grids.push({ left: padL, right: padR, top: volTop, height: volH });
+        if (hasSub) grids.push({ left: padL, right: padR, top: volTop + volH + 12, height: 54 });
+      } else {
+        const priceH = hasSub ? 250 : 322;
+        grids.push({ left: padL, right: padR, top: 14, height: priceH });
+        const volTop = 14 + priceH + 26;
+        grids.push({ left: padL, right: padR, top: volTop, height: 58 });
+        if (hasSub) grids.push({ left: padL, right: padR, top: volTop + 58 + 26, height: 74 });
+      }
       const last = grids.length - 1;
 
       const xAxis = grids.map((g, i) => ({
         type: 'category', gridIndex: i, data: dates, boundaryGap: true,
         axisLine: { lineStyle: { color: '#E3E8EF' } }, axisTick: { show: false },
         axisLabel: i === last
-          ? { fontSize: 10, color: '#9CA3AF', hideOverlap: true }
+          ? { fontSize: 10, color: '#9CA3AF', hideOverlap: true, margin: isMob ? 34 : 8 }
           : { show: false }
       }));
       const yAxis = grids.map((g, i) => ({
@@ -2351,7 +2363,6 @@ createApp({
       const span = Math.min(defaultSpan, n);
       const startPct = n > span ? Math.max(0, 100 - (span / n) * 100) : 0;
 
-      const isMob = window.innerWidth <= 768;
       this._fullChart.setOption({
         animation: false,
         grid: grids,
@@ -2475,7 +2486,9 @@ createApp({
         dataZoom: [
           { type: 'inside', xAxisIndex: Array.from({ length: grids.length }, (_, i) => i), start: startPct, end: 100 },
           { type: 'slider', xAxisIndex: Array.from({ length: grids.length }, (_, i) => i), start: startPct, end: 100,
-            height: 18, bottom: 4, borderColor: '#E3E8EF',
+            height: isMob ? 16 : 18,
+            ...(isMob ? { top: 316, showDetail: false } : { bottom: 4 }),
+            borderColor: '#E3E8EF',
             fillerColor: 'rgba(21,101,192,.12)', handleSize: '86%',
             textStyle: { fontSize: 10, color: '#9CA3AF' } }
         ],
