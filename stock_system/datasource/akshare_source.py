@@ -263,6 +263,11 @@ class AkshareSource(BaseDataSource):
         df = df.sort_values("trade_date").reset_index(drop=True)
 
         close = pd.to_numeric(df["close"], errors="coerce")
+        raw_vol = pd.to_numeric(df["volume"], errors="coerce")
+        raw_amt = pd.to_numeric(df["amount"], errors="coerce")
+        # 腾讯接口 volume 单位通常为「股」，而东财为「手」（1手=100股）；统一折算为手
+        is_shares = (raw_vol > 0) & (raw_amt > 0) & ((raw_amt / raw_vol) < (close * 10))
+        norm_vol = raw_vol.where(~is_shares, (raw_vol / 100).round()).astype("Int64")
         out = pd.DataFrame({
             "trade_date": df["trade_date"],
             "stock_code": str(code).zfill(6),
@@ -271,8 +276,8 @@ class AkshareSource(BaseDataSource):
             "low_price": pd.to_numeric(df["low"], errors="coerce"),
             "close_price": close,
             "pre_close": close.shift(1),
-            "volume": pd.to_numeric(df["volume"], errors="coerce").astype("Int64"),
-            "amount": pd.to_numeric(df["amount"], errors="coerce"),
+            "volume": norm_vol,
+            "amount": raw_amt,
             "turnover_rate": (pd.to_numeric(df["turnover"], errors="coerce") * 100).round(3),
         })
         out["pct_chg"] = ((out["close_price"] / out["pre_close"] - 1) * 100).round(3)
