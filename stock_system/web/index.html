@@ -1272,6 +1272,7 @@ createApp({
       klineFull: { visible: false, code: '', name: '', days: 250, total: 0,
                    from: '', to: '', loading: false, fullReady: false, fullLoading: false },
       klineRanges: [
+        { d: 100, label: '近100日' },
         { d: 250, label: '近1年' },
         { d: 750, label: '近3年' },
         { d: 1250, label: '近5年' },
@@ -1398,14 +1399,15 @@ createApp({
         const ctxRaw = localStorage.getItem('stock_kline_ctx_' + kcode);
         if (ctxRaw) this.selected = JSON.parse(ctxRaw);
       } catch (e) {}
+      const initDays = window.innerWidth <= 768 ? 100 : 250;
       this.klineFull = {
         visible: true, code: kcode, name: kn,
-        days: 250, total: 0, from: '', to: '',
+        days: initDays, total: 0, from: '', to: '',
         loading: false, fullReady: false, fullLoading: false
       };
       document.title = (kn ? kn + ' ' : '') + kcode + ' · 日K线';
       await this.$nextTick();
-      await this.loadFullKline(250);
+      await this.loadFullKline(initDays);
       this._prefetchPromise = this.prefetchFull(kcode);
       this.loadKlineSide(kcode);   // 右侧财务栏，不阻塞 K 线
       return;
@@ -1808,17 +1810,18 @@ createApp({
       if (!this.selected) return;
       if (!this._klineCache) this._klineCache = new Map();
       const code = this.selected.stock_code;
+      const initDays = window.innerWidth <= 768 ? 100 : 250;
       this.klineFull = {
         visible: true, code: code,
         name: this.selected.stock_name || '',
-        days: 250, total: 0, from: '', to: '',
+        days: initDays, total: 0, from: '', to: '',
         loading: false, fullReady: false, fullLoading: false
       };
       this._fullBars = [];
       this._prefetchPromise = null;
-      // 先用 250 根把图秒出来（线上实测 0.2s），全量在后台静默预取
+      // 先用 100/250 根把图秒出来，全量在后台静默预取
       this.$nextTick(async () => {
-        await this.loadFullKline(250);
+        await this.loadFullKline(initDays);
         this._prefetchPromise = this.prefetchFull(code);
       });
     },
@@ -2348,11 +2351,12 @@ createApp({
       const span = Math.min(defaultSpan, n);
       const startPct = n > span ? Math.max(0, 100 - (span / n) * 100) : 0;
 
+      const isMob = window.innerWidth <= 768;
       this._fullChart.setOption({
         animation: false,
         grid: grids,
-        axisPointer: { link: [{ xAxisIndex: 'all' }] },
-        tooltip: {
+        axisPointer: isMob ? { show: false } : { link: [{ xAxisIndex: 'all' }] },
+        tooltip: isMob ? { show: false } : {
           trigger: 'axis',
           axisPointer: { type: 'cross' },
           backgroundColor: 'rgba(255,255,255,.97)',
