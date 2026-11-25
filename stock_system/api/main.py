@@ -325,9 +325,10 @@ def _ensure_user_table() -> None:
             )
 
 
-def _issue_token(username: str, role: str = "admin") -> str:
+def _issue_token(username: str, role: str = "admin", expire_seconds: Optional[int] = None) -> str:
+    ttl = expire_seconds if expire_seconds is not None else config.AUTH_EXPIRE_SECONDS
     payload = json.dumps(
-        {"sub": username, "role": role, "exp": int(time.time()) + config.AUTH_EXPIRE_SECONDS}
+        {"sub": username, "role": role, "exp": int(time.time()) + ttl}
     ).encode()
     b64 = base64.urlsafe_b64encode(payload).decode().rstrip("=")
     sig = hmac.new(config.AUTH_SECRET.encode(), b64.encode(), hashlib.sha256).hexdigest()
@@ -1296,6 +1297,7 @@ def screen_runs(limit: int = 20):
 class LoginIn(BaseModel):
     username: str
     password: str
+    client_type: str = "web"
 
 
 @app.post("/api/v1/auth/login")
@@ -1313,8 +1315,9 @@ def auth_login(body: LoginIn):
     if not _verify_password(body.password, str(u["password_hash"])):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     role = str(u["role"])
+    ttl = config.AUTH_MOBILE_EXPIRE_SECONDS if body.client_type == "mobile" else config.AUTH_EXPIRE_SECONDS
     return {
-        "access_token": _issue_token(str(u["username"]), role),
+        "access_token": _issue_token(str(u["username"]), role, expire_seconds=ttl),
         "token_type": "bearer",
         "user": {
             "user_id": int(u["user_id"]),

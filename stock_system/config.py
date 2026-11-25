@@ -55,6 +55,7 @@ AUTH_USERNAME = os.getenv("STOCK_AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("STOCK_AUTH_PASSWORD") or "StockSys_Admin_2026"
 AUTH_SECRET = os.getenv("STOCK_AUTH_SECRET") or "change_this_hmac_secret_in_prod"
 AUTH_EXPIRE_SECONDS = int(os.getenv("STOCK_AUTH_EXPIRE_SECONDS", "86400"))
+AUTH_MOBILE_EXPIRE_SECONDS = int(os.getenv("STOCK_AUTH_MOBILE_EXPIRE_SECONDS", "604800"))
 CORS_ORIGINS = [
     o.strip()
     for o in os.getenv("STOCK_CORS_ORIGINS", "*").split(",")

@@ -1481,7 +1481,10 @@ createApp({
         const res = await this.api('/api/v1/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.loginForm),
+          body: JSON.stringify({
+            ...this.loginForm,
+            client_type: window.Capacitor ? 'mobile' : 'web',
+          }),
         });
         localStorage.setItem('stock_token', res.access_token);
         if (res.user) {
