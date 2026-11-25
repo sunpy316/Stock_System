@@ -2342,9 +2342,10 @@ createApp({
         }
       }
 
-      // 默认视角落在最近 250 根，历史靠滑块往左拖
+      // 默认视角：手机端落在最近 100 根（清晰不拥挤），PC 端落在最近 250 根，历史可向左滑动
       const n = bars.length;
-      const span = Math.min(250, n);
+      const defaultSpan = window.innerWidth <= 768 ? 100 : 250;
+      const span = Math.min(defaultSpan, n);
       const startPct = n > span ? Math.max(0, 100 - (span / n) * 100) : 0;
 
       this._fullChart.setOption({
