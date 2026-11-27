@@ -34,6 +34,12 @@ from ..meta.pinyin import initials
 from ..screener import ScreenError, run_screen
 from ..screener import cross_section
 from ..screener.etf_launch import ensure_etf_table, query_etf_signals, run_etf_scan
+from ..screener.launch_pool import (
+    ensure_pool_table,
+    query_launch_pool,
+    sync_etf_launch_pool,
+    sync_stock_launch_pool,
+)
 from ..screener.templates import INDICATOR_META, TEMPLATES
 from .exporter import export_run
 
@@ -183,6 +189,11 @@ def _run_daily_update():
         cross_section.invalidate()  # 数据变了，横截面缓存必须失效
         # 采集完立即预热：用户下班后打开页面就是热的，不必等第一次冷构建
         cross_section.warmup()
+        try:
+            pool_r = sync_stock_launch_pool()
+            print(f"[daily] 个股启动信号池已同步：{pool_r}", flush=True)
+        except Exception as pexc:  # noqa: BLE001
+            print(f"[daily] 个股启动信号池同步失败：{pexc}", flush=True)
         print(f"[daily] {today} 更新完成，用时 {int(time.time() - t0)}s", flush=True)
     except Exception as exc:  # noqa: BLE001
         print(f"[daily] 更新失败（{int(time.time() - t0)}s）：{exc}", flush=True)
@@ -282,6 +293,11 @@ async def lifespan(app: FastAPI):
         ensure_etf_table()
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] 初始化 ETF 启动信号表失败：{exc}", flush=True)
+
+    try:
+        ensure_pool_table()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] 初始化启动信号池表失败：{exc}", flush=True)
 
     scheduler.start()
     try:
@@ -917,6 +933,7 @@ def _task_spec(task: str, start=None, limit=None):
         "financial": ("同步财务数据", lambda: sync_financial(skip_existing=True)),
         "financial_full": ("全量刷新财报", lambda: sync_financial(skip_existing=False)),
         "indicator": ("重算技术指标", lambda: calc_indicator(start=start)),
+        "stock_pool": ("个股启动信号池更新", lambda: sync_stock_launch_pool()),
         "etf_launch": ("ETF启动信号扫描", lambda: run_etf_scan()),
     }
     return spec.get(task)
@@ -1559,6 +1576,51 @@ def trigger_etf_launch_scan(min_amt_yi: float = 1.5):
     )
     t.start()
     return {"ok": True, "started": True, "message": "已启动 ETF 启动信号扫描，请稍候刷新"}
+
+
+@app.get("/api/v1/launch-pool")
+def get_launch_pool(
+    asset_type: str = "STOCK",
+    status: str = "ACTIVE",
+    buy_level: Optional[str] = None,
+):
+    """查询个股或 ETF 启动信号持续跟踪池（含买入级别、入池理由、跟踪表现与移出记录）。"""
+    try:
+        res = query_launch_pool(asset_type=asset_type, status=status, buy_level=buy_level)
+        with _TASK_LOCK:
+            res["scanning"] = ("etf_launch" in _TASK_RUNNING) if asset_type.upper() == "ETF" else ("stock_pool" in _TASK_RUNNING)
+        return res
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/v1/launch-pool/refresh")
+def refresh_launch_pool(asset_type: str = "STOCK"):
+    """手动触发个股或 ETF 启动信号池刷新（个股同步完成，ETF 后台扫描并同步入池）。"""
+    at = asset_type.upper()
+    if at == "STOCK":
+        try:
+            res = sync_stock_launch_pool()
+            return {"ok": True, "done": True, "result": res, "message": f"个股池已更新：新入 {res.get('added', 0)} · 跟踪 {res.get('updated', 0)} · 移出 {res.get('exited', 0)}"}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    if at == "ETF":
+        with _TASK_LOCK:
+            if "etf_launch" in _TASK_RUNNING:
+                return {"ok": True, "already_running": True, "message": "ETF 扫描与信号池更新正在进行中"}
+            _TASK_RUNNING["etf_launch"] = datetime.now().isoformat()
+
+        t = threading.Thread(
+            target=_run_task_thread,
+            args=("etf_launch", lambda: run_etf_scan()),
+            name="task-etf-launch",
+            daemon=True,
+        )
+        t.start()
+        return {"ok": True, "started": True, "message": "已启动 ETF 扫描与信号池跟踪更新，请稍候自动刷新"}
+
+    raise HTTPException(status_code=400, detail="asset_type 仅支持 STOCK 或 ETF")
 
 
 @app.get("/health")

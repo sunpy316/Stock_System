@@ -410,6 +410,20 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 .tier-badge{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
 .tier-badge.t1{background:#FEE2E2;color:#B91C1C}
 .tier-badge.t2{background:#DBEAFE;color:#1D4ED8}
+.lvl-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+.lvl-s{background:#FEE2E2;color:#B91C1C;border:1px solid #FECACA}
+.lvl-a{background:#FFEDD5;color:#C2410C;border:1px solid #FED7AA}
+.lvl-b{background:#DCFCE7;color:#15803D;border:1px solid #BBF7D0}
+.lvl-c{background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE}
+.lvl-d{background:#FEF3C7;color:#B45309;border:1px solid #FDE68A}
+.new-tag{display:inline-block;margin-left:4px;padding:0 5px;border-radius:4px;font-size:10px;font-weight:700;
+  background:#DC2626;color:#fff;vertical-align:middle}
+.pool-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.pool-tab{height:30px;padding:0 12px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;
+  color:#475569;font-size:12.5px;cursor:pointer}
+.pool-tab.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+.reason-cell{max-width:280px;font-size:12px;line-height:1.45;color:#334155;white-space:normal}
+.reason-sub{font-size:11px;color:#64748B;margin-top:2px}
 @media (max-width: 768px){
   body{height:auto;min-height:100vh;overflow-y:auto;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   #app{overflow:visible}
@@ -480,6 +494,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 
   <nav class="tabs">
     <button :class="{on: view==='screen'}" @click="switchView('screen')">筛选工作台</button>
+    <button :class="{on: view==='stock_launch'}" @click="switchView('stock_launch')">个股启动</button>
     <button :class="{on: view==='etf'}" @click="switchView('etf')">ETF启动</button>
     <button :class="{on: view==='strategy'}" @click="switchView('strategy')">策略管理</button>
     <button :class="{on: view==='watch'}" @click="switchView('watch')">自选股</button>
@@ -668,24 +683,240 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
     </section>
   </main>
 
-  <!-- ETF 启动信号 -->
-  <section v-if="view==='etf'" class="page">
+  <!-- 个股启动信号池（持续每日跟踪） -->
+  <section v-if="view==='stock_launch'" class="page">
     <div class="page-head">
-      <h2>ETF 启动信号 <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:6px">{{ etfData.trade_date || '暂无数据' }}</span></h2>
+      <h2>个股启动信号池 <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:6px">跟踪截止 {{ stockPool.latest_date || '暂无数据' }}</span></h2>
       <div class="page-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <select v-if="etfData.dates && etfData.dates.length" v-model="etfDate" @change="loadEtfSignals(etfDate)"
-                style="height:32px;padding:0 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:12.5px">
-          <option v-for="d in etfData.dates" :key="d" :value="d">{{ d }}</option>
-        </select>
-        <button class="btn" :disabled="etfLoading" @click="loadEtfSignals(etfDate)">刷新</button>
-        <button class="btn primary" :disabled="etfScanning" @click="runEtfScan">
-          {{ etfScanning ? '扫描中…' : '立即扫描' }}
+        <button class="btn" :disabled="stockPoolLoading" @click="loadStockPool">刷新</button>
+        <button class="btn primary" :disabled="stockPoolLoading" @click="refreshStockPool">
+          {{ stockPoolLoading ? '更新中…' : '立即扫描更新' }}
         </button>
       </div>
     </div>
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card-stat"><span>当前池内跟踪</span><b>{{ (stockPool.summary && stockPool.summary.active) || 0 }}</b></div>
+      <div class="card-stat"><span>今日新入池</span><b style="color:#DC2626">{{ (stockPool.summary && stockPool.summary.new_today) || 0 }}</b></div>
+      <div class="card-stat"><span>S / A 级重点</span><b style="color:#C2410C">{{ (stockPool.summary && stockPool.summary.sa_focus) || 0 }}</b></div>
+      <div class="card-stat"><span>B 级回踩低吸</span><b style="color:#15803D">{{ (stockPool.summary && stockPool.summary.b_pullback) || 0 }}</b></div>
+      <div class="card-stat"><span>累计移出</span><b style="color:#64748B">{{ (stockPool.summary && stockPool.summary.exited) || 0 }}</b></div>
+    </div>
+    <div class="pool-bar">
+      <button class="pool-tab" :class="{on: stockPoolStatus==='ACTIVE'}" @click="stockPoolStatus='ACTIVE'; loadStockPool()">当前池内跟踪</button>
+      <button class="pool-tab" :class="{on: stockPoolStatus==='EXITED'}" @click="stockPoolStatus='EXITED'; loadStockPool()">已移出记录</button>
+      <select v-if="stockPoolStatus==='ACTIVE'" v-model="stockPoolLevel" @change="loadStockPool"
+              style="height:30px;padding:0 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:12px">
+        <option value="">全部买入级别</option>
+        <option value="S-">S-强烈关注</option>
+        <option value="A-">A-重点关注</option>
+        <option value="B-">B-回踩低吸</option>
+        <option value="C-">C-持有观察</option>
+        <option value="D-">D-高乖离等待</option>
+      </select>
+      <span v-if="stockPoolMsg" style="font-size:12px;color:#1565C0;font-weight:600;margin-left:auto">{{ stockPoolMsg }}</span>
+    </div>
+    <div style="margin-bottom:10px;padding:8px 12px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;font-size:11.5px;color:#475569">
+      入池来源：<b>T10（缩量蓄势·口袋支点）</b> / <b>T11（主线核心·放量平台突破）</b>；每日收盘自动跟踪并重算买入级别，跌破 MA20 / 动态防守位 / 高点回撤 ≥ 12% 或跟踪 15 日未走强将自动移出。
+    </div>
+    <div class="card">
+      <table class="grid-table">
+        <thead>
+          <tr v-if="stockPoolStatus==='ACTIVE'">
+            <th>代码</th><th>简称</th><th>买入级别</th><th>来源</th>
+            <th class="num">现价 / 日涨跌</th><th class="num">入池 / 累计 / 天数</th>
+            <th class="num">防守位(MA20) / 乖离</th><th>加入池子理由 &amp; 跟踪点评</th>
+          </tr>
+          <tr v-else>
+            <th>代码</th><th>简称</th><th>来源</th><th>入池 → 移出</th>
+            <th class="num">入池价 → 移出价</th><th class="num">期间收益 / 天数</th>
+            <th>加入池子理由</th><th>移出理由</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-if="stockPoolStatus==='ACTIVE'">
+            <tr v-for="it in (stockPool.items || [])" :key="'sp-' + it.pool_id" class="clickable"
+                @click="openPoolStock(it)" title="点击查看K线与详情">
+              <td><span class="code">{{ it.code }}</span></td>
+              <td>
+                <b>{{ it.name }}</b>
+                <span v-if="it.is_new_today" class="new-tag">新入</span>
+              </td>
+              <td>
+                <span class="lvl-badge" :class="buyLevelClass(it.buy_level)">{{ it.buy_level }}</span>
+                <div style="font-size:10.5px;color:#94A3B8;margin-top:2px">评分 {{ it.buy_score }}</div>
+              </td>
+              <td><span class="sig-pill">{{ it.source_tag }}</span></td>
+              <td class="num">
+                <div><b>{{ num(it.last_price, 2) }}</b></div>
+                <div :class="cls(it.last_pct_chg)" style="font-size:11.5px">{{ pct(it.last_pct_chg) }}</div>
+              </td>
+              <td class="num">
+                <div :class="cls(it.cum_pct)"><b>{{ pct(it.cum_pct) }}</b></div>
+                <div style="font-size:11px;color:#64748B">{{ (it.entry_date || '').slice(5) }} · {{ num(it.entry_price, 2) }} · 第{{ it.days_tracked }}天</div>
+              </td>
+              <td class="num">
+                <div>{{ num(it.stop_loss_ref || it.ma20, 2) }}</div>
+                <div :style="(it.bias_ma20 || 0) > 12 ? 'color:#B45309;font-weight:600;font-size:11px' : 'color:#64748B;font-size:11px'">
+                  乖离 {{ it.bias_ma20 === null ? '—' : num(it.bias_ma20, 1) + '%' }}
+                </div>
+              </td>
+              <td class="reason-cell">
+                <div>{{ it.entry_reason }}</div>
+                <div class="reason-sub">📌 {{ it.track_note }}</div>
+              </td>
+            </tr>
+            <tr v-if="!(stockPool.items || []).length">
+              <td colspan="8" style="text-align:center;color:#9CA3AF;padding:28px">
+                {{ stockPoolLoading ? '加载中…' : '当前无符合条件的池内个股，可点右上角「立即扫描更新」' }}
+              </td>
+            </tr>
+          </template>
+          <template v-else>
+            <tr v-for="it in (stockPool.items || [])" :key="'spe-' + it.pool_id" class="clickable"
+                @click="openPoolStock(it)">
+              <td><span class="code">{{ it.code }}</span></td>
+              <td><b>{{ it.name }}</b></td>
+              <td><span class="sig-pill">{{ it.source_tag }}</span></td>
+              <td class="mono" style="font-size:12px">{{ it.entry_date }} → {{ it.exit_date }}</td>
+              <td class="num">{{ num(it.entry_price, 2) }} → {{ num(it.last_price, 2) }}</td>
+              <td class="num">
+                <span :class="cls(it.cum_pct)"><b>{{ pct(it.cum_pct) }}</b></span>
+                <span style="color:#94A3B8;font-size:11px;margin-left:4px">{{ it.days_tracked }}天</span>
+              </td>
+              <td class="reason-cell">{{ it.entry_reason }}</td>
+              <td class="reason-cell" style="color:#B91C1C">{{ it.exit_reason }}</td>
+            </tr>
+            <tr v-if="!(stockPool.items || []).length">
+              <td colspan="8" style="text-align:center;color:#9CA3AF;padding:28px">暂无已移出记录</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ETF 启动信号与持续跟踪池 -->
+  <section v-if="view==='etf'" class="page">
+    <div class="page-head">
+      <h2>ETF 启动信号池 <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:6px">{{ etfViewMode === 'scan' ? (etfData.trade_date || '暂无数据') : ('跟踪截止 ' + (etfPool.latest_date || '暂无数据')) }}</span></h2>
+      <div class="page-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select v-if="etfViewMode==='scan' && etfData.dates && etfData.dates.length" v-model="etfDate" @change="loadEtfSignals(etfDate)"
+                style="height:32px;padding:0 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:12.5px">
+          <option v-for="d in etfData.dates" :key="d" :value="d">{{ d }}</option>
+        </select>
+        <button class="btn" :disabled="etfLoading" @click="etfViewMode==='scan' ? loadEtfSignals(etfDate) : loadEtfPool()">刷新</button>
+        <button class="btn primary" :disabled="etfScanning" @click="runEtfScan">
+          {{ etfScanning ? '扫描中…' : '立即扫描更新' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="cards" style="margin-bottom:12px" v-if="etfViewMode !== 'scan'">
+      <div class="card-stat"><span>当前池内跟踪</span><b>{{ (etfPool.summary && etfPool.summary.active) || 0 }}</b></div>
+      <div class="card-stat"><span>今日新入池</span><b style="color:#DC2626">{{ (etfPool.summary && etfPool.summary.new_today) || 0 }}</b></div>
+      <div class="card-stat"><span>S / A 级重点</span><b style="color:#C2410C">{{ (etfPool.summary && etfPool.summary.sa_focus) || 0 }}</b></div>
+      <div class="card-stat"><span>B 级回踩低吸</span><b style="color:#15803D">{{ (etfPool.summary && etfPool.summary.b_pullback) || 0 }}</b></div>
+      <div class="card-stat"><span>累计移出</span><b style="color:#64748B">{{ (etfPool.summary && etfPool.summary.exited) || 0 }}</b></div>
+    </div>
+
+    <div class="pool-bar">
+      <button class="pool-tab" :class="{on: etfViewMode==='ACTIVE'}" @click="etfViewMode='ACTIVE'; loadEtfPool()">当前池内跟踪</button>
+      <button class="pool-tab" :class="{on: etfViewMode==='EXITED'}" @click="etfViewMode='EXITED'; loadEtfPool()">已移出记录</button>
+      <button class="pool-tab" :class="{on: etfViewMode==='scan'}" @click="etfViewMode='scan'; loadEtfSignals(etfDate)">当日原始扫描</button>
+      <select v-if="etfViewMode==='ACTIVE'" v-model="etfPoolLevel" @change="loadEtfPool"
+              style="height:30px;padding:0 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:12px">
+        <option value="">全部买入级别</option>
+        <option value="S-">S-强烈关注</option>
+        <option value="A-">A-重点关注</option>
+        <option value="B-">B-回踩低吸</option>
+        <option value="C-">C-持有观察</option>
+        <option value="D-">D-高乖离等待</option>
+      </select>
+      <span v-if="etfMsg" style="font-size:12px;color:#1565C0;font-weight:600;margin-left:auto">{{ etfMsg }}</span>
+    </div>
+
+    <template v-if="etfViewMode !== 'scan'">
+      <div style="margin-bottom:10px;padding:8px 12px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;font-size:11.5px;color:#475569">
+        入池来源：A股权益 ETF（成交额 ≥ 1.5 亿，剔除货基/债基/跨境/商品）触发 <b>Tier 1 / Tier 2</b> 启动信号；每日 18:15 自动跟踪并评定买入级别，跌破 MA20 / 防守位或高点回撤 ≥ 8% 自动移出。
+      </div>
+      <div class="card">
+        <table class="grid-table">
+          <thead>
+            <tr v-if="etfViewMode==='ACTIVE'">
+              <th>代码</th><th>名称</th><th>买入级别</th><th>来源</th>
+              <th class="num">现价 / 日涨跌</th><th class="num">入池 / 累计 / 天数</th>
+              <th class="num">防守位(MA20) / 乖离</th><th>加入池子理由 &amp; 跟踪点评</th>
+            </tr>
+            <tr v-else>
+              <th>代码</th><th>名称</th><th>来源</th><th>入池 → 移出</th>
+              <th class="num">入池价 → 移出价</th><th class="num">期间收益 / 天数</th>
+              <th>加入池子理由</th><th>移出理由</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-if="etfViewMode==='ACTIVE'">
+              <tr v-for="e in (etfPool.items || [])" :key="'ep-' + e.pool_id">
+                <td><span class="code">{{ e.code }}</span></td>
+                <td>
+                  <b>{{ e.name }}</b>
+                  <span v-if="e.is_new_today" class="new-tag">新入</span>
+                </td>
+                <td>
+                  <span class="lvl-badge" :class="buyLevelClass(e.buy_level)">{{ e.buy_level }}</span>
+                  <div style="font-size:10.5px;color:#94A3B8;margin-top:2px">评分 {{ e.buy_score }}</div>
+                </td>
+                <td><span class="sig-pill">{{ e.source_tag }}</span></td>
+                <td class="num">
+                  <div><b>{{ num(e.last_price, 3) }}</b></div>
+                  <div :class="cls(e.last_pct_chg)" style="font-size:11.5px">{{ pct(e.last_pct_chg) }}</div>
+                </td>
+                <td class="num">
+                  <div :class="cls(e.cum_pct)"><b>{{ pct(e.cum_pct) }}</b></div>
+                  <div style="font-size:11px;color:#64748B">{{ (e.entry_date || '').slice(5) }} · {{ num(e.entry_price, 3) }} · 第{{ e.days_tracked }}天</div>
+                </td>
+                <td class="num">
+                  <div>{{ num(e.stop_loss_ref || e.ma20, 3) }}</div>
+                  <div :style="(e.bias_ma20 || 0) > 8 ? 'color:#B45309;font-weight:600;font-size:11px' : 'color:#64748B;font-size:11px'">
+                    乖离 {{ e.bias_ma20 === null ? '—' : num(e.bias_ma20, 1) + '%' }}
+                  </div>
+                </td>
+                <td class="reason-cell">
+                  <div>{{ e.entry_reason }}</div>
+                  <div class="reason-sub">📌 {{ e.track_note }}</div>
+                </td>
+              </tr>
+              <tr v-if="!(etfPool.items || []).length">
+                <td colspan="8" style="text-align:center;color:#9CA3AF;padding:28px">
+                  {{ etfLoading ? '加载中…' : '当前无符合条件的池内 ETF，可点右上角「立即扫描更新」' }}
+                </td>
+              </tr>
+            </template>
+            <template v-else>
+              <tr v-for="e in (etfPool.items || [])" :key="'epe-' + e.pool_id">
+                <td><span class="code">{{ e.code }}</span></td>
+                <td><b>{{ e.name }}</b></td>
+                <td><span class="sig-pill">{{ e.source_tag }}</span></td>
+                <td class="mono" style="font-size:12px">{{ e.entry_date }} → {{ e.exit_date }}</td>
+                <td class="num">{{ num(e.entry_price, 3) }} → {{ num(e.last_price, 3) }}</td>
+                <td class="num">
+                  <span :class="cls(e.cum_pct)"><b>{{ pct(e.cum_pct) }}</b></span>
+                  <span style="color:#94A3B8;font-size:11px;margin-left:4px">{{ e.days_tracked }}天</span>
+                </td>
+                <td class="reason-cell">{{ e.entry_reason }}</td>
+                <td class="reason-cell" style="color:#B91C1C">{{ e.exit_reason }}</td>
+              </tr>
+              <tr v-if="!(etfPool.items || []).length">
+                <td colspan="8" style="text-align:center;color:#9CA3AF;padding:28px">暂无已移出记录</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <template v-else>
     <div style="margin-bottom:12px;padding:9px 12px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;font-size:12px;color:#475569;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
       <span>过滤口径：A股权益 ETF · 成交额 ≥ 1.5 亿 · 剔除货基/债基/跨境/商品 · 5日量比 ≥ 1.4 · 上影线 ≤ 35%</span>
-      <span v-if="etfMsg" style="color:#1565C0;font-weight:600">{{ etfMsg }}</span>
     </div>
 
     <div class="tier-h">
@@ -722,7 +953,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
           </tr>
           <tr v-if="!(etfData.tier1 || []).length">
             <td colspan="10" style="text-align:center;color:#9CA3AF;padding:24px">
-              {{ etfLoading ? '加载中…' : '当日暂无 Tier 1 主升突破 ETF，可点击右上角「立即扫描」' }}
+              {{ etfLoading ? '加载中…' : '当日暂无 Tier 1 主升突破 ETF，可点击右上角「立即扫描更新」' }}
             </td>
           </tr>
         </tbody>
@@ -769,6 +1000,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
         </tbody>
       </table>
     </div>
+    </template>
   </section>
 
   <!-- 策略管理 -->
@@ -1373,6 +1605,14 @@ createApp({
       userDraft: { user_id: null, username: '', display_name: '', password: '', role: 'user', is_active: 1 },
       error: '',
       view: 'screen',
+      stockPool: { latest_date: null, summary: {}, items: [] },
+      stockPoolStatus: 'ACTIVE',
+      stockPoolLevel: '',
+      stockPoolLoading: false,
+      stockPoolMsg: '',
+      etfViewMode: 'ACTIVE',
+      etfPool: { latest_date: null, summary: {}, items: [] },
+      etfPoolLevel: '',
       etfData: { trade_date: null, dates: [], tier1: [], tier2: [], scanning: false },
       etfDate: '',
       etfLoading: false,
@@ -1543,9 +1783,9 @@ createApp({
     }
 
     await this.loadMeta();
-    // 支持 #etf / #watch / #strategy / #data 直接打开对应页，可加书签
+    // 支持 #stock_launch / #etf / #watch / #strategy / #data 直接打开对应页，可加书签
     const h = (location.hash || '').replace('#', '');
-    if (['etf', 'strategy', 'watch', 'data', 'users'].indexOf(h) >= 0) this.switchView(h);
+    if (['stock_launch', 'etf', 'strategy', 'watch', 'data', 'users'].indexOf(h) >= 0) this.switchView(h);
     else this.applyTemplate();
 
     document.addEventListener('visibilitychange', () => {
@@ -2813,7 +3053,11 @@ createApp({
       }
       // 直接落在列表页时还没跑过筛选，切回工作台再补一次
       if (v === 'screen' && !(this.result.items || []).length) { this.applyTemplate(); return; }
-      if (v === 'etf') this.loadEtfSignals(this.etfDate);
+      if (v === 'stock_launch') this.loadStockPool();
+      if (v === 'etf') {
+        if (this.etfViewMode === 'scan') this.loadEtfSignals(this.etfDate);
+        else this.loadEtfPool();
+      }
       if (v === 'strategy') this.loadStrategies();
       if (v === 'watch') this.loadWatchlist();
       if (v === 'users') this.loadUsers();
@@ -2824,6 +3068,71 @@ createApp({
         this.startPolling();
       } else {
         this.stopPolling();
+      }
+    },
+    buyLevelClass(lvl) {
+      const s = String(lvl || '');
+      if (s.startsWith('S-')) return 'lvl-s';
+      if (s.startsWith('A-')) return 'lvl-a';
+      if (s.startsWith('B-')) return 'lvl-b';
+      if (s.startsWith('D-')) return 'lvl-d';
+      return 'lvl-c';
+    },
+    async openPoolStock(it) {
+      await this.selectStock({
+        stock_code: it.code,
+        stock_name: it.name,
+        close_price: it.last_price,
+        pct_chg: it.last_pct_chg,
+        score: it.buy_score,
+        detail: [],
+        external: true,
+      });
+    },
+    async loadStockPool() {
+      this.stockPoolLoading = true;
+      try {
+        let qs = '?asset_type=STOCK&status=' + encodeURIComponent(this.stockPoolStatus);
+        if (this.stockPoolStatus === 'ACTIVE' && this.stockPoolLevel) {
+          qs += '&buy_level=' + encodeURIComponent(this.stockPoolLevel);
+        }
+        const res = await this.api('/api/v1/launch-pool' + qs);
+        this.stockPool = res || { latest_date: null, summary: {}, items: [] };
+      } catch (e) {
+        this.stockPoolMsg = '加载失败：' + e.message;
+      } finally {
+        this.stockPoolLoading = false;
+      }
+    },
+    async refreshStockPool() {
+      this.stockPoolLoading = true;
+      this.stockPoolMsg = '正在扫描 T10/T11 并更新个股跟踪池…';
+      try {
+        const res = await this.api('/api/v1/launch-pool/refresh?asset_type=STOCK', { method: 'POST' });
+        this.stockPoolMsg = (res && res.message) || '个股信号池已更新';
+        await this.loadStockPool();
+      } catch (e) {
+        this.stockPoolMsg = '更新失败：' + e.message;
+      } finally {
+        this.stockPoolLoading = false;
+      }
+    },
+    async loadEtfPool() {
+      this.etfLoading = true;
+      try {
+        const st = this.etfViewMode === 'EXITED' ? 'EXITED' : 'ACTIVE';
+        let qs = '?asset_type=ETF&status=' + st;
+        if (st === 'ACTIVE' && this.etfPoolLevel) {
+          qs += '&buy_level=' + encodeURIComponent(this.etfPoolLevel);
+        }
+        const res = await this.api('/api/v1/launch-pool' + qs);
+        this.etfPool = res || { latest_date: null, summary: {}, items: [] };
+        this.etfScanning = !!(res && res.scanning);
+        if (this.etfScanning) this._pollEtfScan();
+      } catch (e) {
+        this.etfMsg = '加载失败：' + e.message;
+      } finally {
+        this.etfLoading = false;
       }
     },
     async loadEtfSignals(d) {
@@ -2843,9 +3152,9 @@ createApp({
     },
     async runEtfScan() {
       this.etfScanning = true;
-      this.etfMsg = '已触发扫描，正在拉取全市场 ETF K 线…';
+      this.etfMsg = '已触发扫描，正在拉取全市场 ETF K 线并同步信号池…';
       try {
-        const res = await this.api('/api/v1/etf/launch-signals/run', { method: 'POST' });
+        const res = await this.api('/api/v1/launch-pool/refresh?asset_type=ETF', { method: 'POST' });
         this.etfMsg = (res && res.message) || '扫描已启动，完成后将自动刷新';
         this._pollEtfScan();
       } catch (e) {
@@ -2865,7 +3174,8 @@ createApp({
           if (this.etfScanning) {
             this._pollEtfScan();
           } else {
-            this.etfMsg = '扫描完成（Tier 1: ' + (this.etfData.tier1 || []).length + ' · Tier 2: ' + (this.etfData.tier2 || []).length + '）';
+            await this.loadEtfPool();
+            this.etfMsg = '扫描与信号池更新完成（池内活跃: ' + ((this.etfPool.summary && this.etfPool.summary.active) || 0) + '）';
           }
         } catch (e) {
           this.etfScanning = false;

@@ -23,6 +23,7 @@ EXCLUDE_KEYWORDS = [
     "纳指", "纳斯达克", "标普", "日经", "德国", "法国", "沙特", "东南亚",
     "亚太", "美国", "道琼斯", "中概", "恒生", "港股", "香港", "H股", "中韩",
     "快线", "保证金", "理财", "基准做市", "公司债", "地债", "可转", "白银", "有色期货",
+    "巴西", "印度", "越南",
 ]
 
 _SCAN_LOCK = threading.Lock()
@@ -222,6 +223,7 @@ def run_etf_scan(min_amt_yi: float = 1.5, max_workers: int = 10) -> Dict[str, An
         db.log_task_progress(task_id, total_cnt=len(items), success_cnt=0, fail_cnt=0)
 
         analyzed = []
+        kline_cache: Dict[str, List[Dict[str, Any]]] = {}
         latest_dates = Counter()
         fail_cnt = 0
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -231,6 +233,7 @@ def run_etf_scan(min_amt_yi: float = 1.5, max_workers: int = 10) -> Dict[str, An
                 try:
                     rows = fut.result()
                     if rows:
+                        kline_cache[it["code"]] = rows
                         latest_dates[rows[-1]["date"]] += 1
                     res = _analyze_etf(it, rows)
                     if res:
@@ -266,6 +269,18 @@ def run_etf_scan(min_amt_yi: float = 1.5, max_workers: int = 10) -> Dict[str, An
                 update_columns=[c for c in cols if c not in ("trade_date", "etf_code")],
             )
 
+        pool_res = None
+        try:
+            from .launch_pool import sync_etf_launch_pool
+
+            pool_res = sync_etf_launch_pool(
+                trade_date=target_date,
+                scanned_hits=hits,
+                kline_cache=kline_cache,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[etf-launch] 同步 ETF 信号池失败：{exc}", flush=True)
+
         tier1_cnt = sum(1 for r in hits if r["tier"] == 1)
         tier2_cnt = sum(1 for r in hits if r["tier"] == 2)
         db.log_task_end(task_id, "success", len(items), len(items) - fail_cnt, fail_cnt)
@@ -276,6 +291,7 @@ def run_etf_scan(min_amt_yi: float = 1.5, max_workers: int = 10) -> Dict[str, An
             "hit": len(hits),
             "tier1": tier1_cnt,
             "tier2": tier2_cnt,
+            "pool": pool_res,
         }
     except Exception as exc:  # noqa: BLE001
         db.log_task_end(task_id, "failed", 0, 0, 1, str(exc))

@@ -16,6 +16,7 @@ except ImportError:
 
 from stock_system.indicators.calc import calc_technical
 from stock_system.screener.engine import eval_tree
+from stock_system.screener.launch_pool import check_exit_condition, rate_buy_level
 from stock_system.screener.templates import TEMPLATES
 
 
@@ -140,6 +141,34 @@ class TestScreenerAndIndicators(unittest.TestCase):
         self.assertEqual(m10.tolist(), [True, False])
         m11 = eval_tree(TEMPLATES["T11"]["condition"], df)
         self.assertEqual(m11.tolist(), [True, False])
+
+    def test_launch_pool_exit_and_buy_level(self):
+        # 有效跌破 MA20 触发移出
+        reason = check_exit_condition("STOCK", 9.8, 10.1, 10.0, 9.9, -2.0, 4.0, 3)
+        self.assertIsNotNone(reason)
+        self.assertIn("MA20", reason)
+
+        # 未破位则保留
+        self.assertIsNone(check_exit_condition("STOCK", 10.5, 10.4, 10.0, 10.0, 5.0, 1.0, 2))
+
+        # S-强烈关注（T10+T11 双共振健康启动）
+        lvl, score, _ = rate_buy_level(
+            "STOCK", "T10+T11", 12.0, 5.0, 11.6, 11.4, 11.0, 5.2, 2.0, 1.8, 0.0, 0.0, 1, True, False
+        )
+        self.assertEqual(lvl, "S-强烈关注")
+        self.assertGreaterEqual(score, 85)
+
+        # B-回踩低吸（跟踪第3日缩量回踩 MA20）
+        lvl_b, _, _ = rate_buy_level(
+            "STOCK", "T10", 11.6, -1.2, 11.7, 11.4, 11.0, 1.8, 0.75, 0.8, 2.0, 2.0, 3, False, False
+        )
+        self.assertEqual(lvl_b, "B-回踩低吸")
+
+        # D-高乖离等待
+        lvl_d, _, _ = rate_buy_level(
+            "ETF", "Tier1", 1.20, 4.0, 1.15, 1.08, 1.05, 11.1, 1.8, 1.7, 8.0, 0.0, 2, False, False
+        )
+        self.assertEqual(lvl_d, "D-高乖离等待")
 
 
 if __name__ == "__main__":
