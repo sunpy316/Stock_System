@@ -402,6 +402,14 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
   background:var(--primary-soft);color:var(--primary-dark);font-size:12px;white-space:nowrap}
 .sentiment-pill .up{color:var(--up);font-weight:600}
 .sentiment-pill .dn{color:var(--down);font-weight:600}
+.risk-tag{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:4px;font-size:10.5px;font-weight:600;
+  background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;vertical-align:middle;white-space:nowrap}
+.sig-pill{display:inline-block;margin:1px 3px 1px 0;padding:1px 6px;border-radius:4px;font-size:11px;
+  background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;white-space:nowrap}
+.tier-h{display:flex;align-items:center;gap:8px;margin:16px 0 8px;font-size:14px;font-weight:700;color:#111827}
+.tier-badge{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.tier-badge.t1{background:#FEE2E2;color:#B91C1C}
+.tier-badge.t2{background:#DBEAFE;color:#1D4ED8}
 @media (max-width: 768px){
   body{height:auto;min-height:100vh;overflow-y:auto;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   #app{overflow:visible}
@@ -472,6 +480,7 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 
   <nav class="tabs">
     <button :class="{on: view==='screen'}" @click="switchView('screen')">筛选工作台</button>
+    <button :class="{on: view==='etf'}" @click="switchView('etf')">ETF启动</button>
     <button :class="{on: view==='strategy'}" @click="switchView('strategy')">策略管理</button>
     <button :class="{on: view==='watch'}" @click="switchView('watch')">自选股</button>
     <button :class="{on: view==='data'}" @click="switchView('data')">数据管理</button>
@@ -602,7 +611,10 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
             <tr v-for="(it, i) in pagedItems" :key="it.stock_code"
                 :class="{sel: selected && selected.stock_code === it.stock_code}" @click="selectStock(it, i)">
               <td class="l"><span class="code">{{ it.stock_code }}</span></td>
-              <td class="l"><span class="sname">{{ it.stock_name }}</span></td>
+              <td class="l">
+                <span class="sname">{{ it.stock_name }}</span>
+                <span v-if="it.risk_tag" class="risk-tag" :title="'MA20乖离 ' + num(it.bias_ma20, 1) + '%'">{{ it.risk_tag }}</span>
+              </td>
               <td class="l"><span class="tag">{{ it.board }}</span></td>
               <td>{{ num(it.close_price, 2) }}</td>
               <td :class="cls(it.pct_chg)">{{ pct(it.pct_chg) }}</td>
@@ -655,6 +667,109 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
       </div>
     </section>
   </main>
+
+  <!-- ETF 启动信号 -->
+  <section v-if="view==='etf'" class="page">
+    <div class="page-head">
+      <h2>ETF 启动信号 <span style="font-size:12px;font-weight:400;color:#6B7280;margin-left:6px">{{ etfData.trade_date || '暂无数据' }}</span></h2>
+      <div class="page-actions" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <select v-if="etfData.dates && etfData.dates.length" v-model="etfDate" @change="loadEtfSignals(etfDate)"
+                style="height:32px;padding:0 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:12.5px">
+          <option v-for="d in etfData.dates" :key="d" :value="d">{{ d }}</option>
+        </select>
+        <button class="btn" :disabled="etfLoading" @click="loadEtfSignals(etfDate)">刷新</button>
+        <button class="btn primary" :disabled="etfScanning" @click="runEtfScan">
+          {{ etfScanning ? '扫描中…' : '立即扫描' }}
+        </button>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;padding:9px 12px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;font-size:12px;color:#475569;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <span>过滤口径：A股权益 ETF · 成交额 ≥ 1.5 亿 · 剔除货基/债基/跨境/商品 · 5日量比 ≥ 1.4 · 上影线 ≤ 35%</span>
+      <span v-if="etfMsg" style="color:#1565C0;font-weight:600">{{ etfMsg }}</span>
+    </div>
+
+    <div class="tier-h">
+      <span class="tier-badge t1">Tier 1</span>
+      <span>主升趋势突破（站上 MA20 &amp; MA60）</span>
+      <span style="font-size:12px;font-weight:400;color:#6B7280">共 {{ (etfData.tier1 || []).length }} 只</span>
+    </div>
+    <div class="card">
+      <table class="grid-table">
+        <thead>
+          <tr>
+            <th>代码</th><th>名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+            <th class="num">成交额</th><th class="num">5日/20日量比</th><th class="num">20日振幅</th>
+            <th class="num">突破参考位</th><th class="num">防守位(MA20/低点)</th><th>启动信号</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="e in (etfData.tier1 || [])" :key="'t1-' + e.etf_code">
+            <td><span class="code">{{ e.etf_code }}</span></td>
+            <td>
+              <b>{{ e.etf_name }}</b>
+              <span v-if="e.risk_tag" class="risk-tag" :title="'MA20乖离 ' + num(e.bias_ma20, 1) + '%'">{{ e.risk_tag }}</span>
+            </td>
+            <td class="num">{{ num(e.close_price, 3) }}</td>
+            <td class="num" :class="cls(e.pct_chg)">{{ pct(e.pct_chg) }}</td>
+            <td class="num">{{ num(e.amount_yi, 2) }}亿</td>
+            <td class="num">{{ num(e.vol_ratio_5, 2) }} / {{ num(e.vol_ratio_20, 2) }}</td>
+            <td class="num">{{ e.consol_range_20 === null ? '—' : num(e.consol_range_20, 1) + '%' }}</td>
+            <td class="num">{{ num(e.breakout_ref, 3) }}</td>
+            <td class="num">{{ num(e.ma20, 3) }} / {{ num(e.low_price, 3) }}</td>
+            <td>
+              <span v-for="s in (e.signals || '').split(',').filter(Boolean)" :key="s" class="sig-pill">{{ s }}</span>
+            </td>
+          </tr>
+          <tr v-if="!(etfData.tier1 || []).length">
+            <td colspan="10" style="text-align:center;color:#9CA3AF;padding:24px">
+              {{ etfLoading ? '加载中…' : '当日暂无 Tier 1 主升突破 ETF，可点击右上角「立即扫描」' }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tier-h" style="margin-top:20px">
+      <span class="tier-badge t2">Tier 2</span>
+      <span>右侧转折 / 口袋支点（站上 MA20、仍处 MA60 下方）</span>
+      <span style="font-size:12px;font-weight:400;color:#6B7280">共 {{ (etfData.tier2 || []).length }} 只</span>
+    </div>
+    <div class="card">
+      <table class="grid-table">
+        <thead>
+          <tr>
+            <th>代码</th><th>名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+            <th class="num">成交额</th><th class="num">5日/20日量比</th><th class="num">20日振幅</th>
+            <th class="num">距MA60空间</th><th class="num">突破/防守位</th><th>启动信号</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="e in (etfData.tier2 || [])" :key="'t2-' + e.etf_code">
+            <td><span class="code">{{ e.etf_code }}</span></td>
+            <td>
+              <b>{{ e.etf_name }}</b>
+              <span v-if="e.risk_tag" class="risk-tag" :title="'MA20乖离 ' + num(e.bias_ma20, 1) + '%'">{{ e.risk_tag }}</span>
+            </td>
+            <td class="num">{{ num(e.close_price, 3) }}</td>
+            <td class="num" :class="cls(e.pct_chg)">{{ pct(e.pct_chg) }}</td>
+            <td class="num">{{ num(e.amount_yi, 2) }}亿</td>
+            <td class="num">{{ num(e.vol_ratio_5, 2) }} / {{ num(e.vol_ratio_20, 2) }}</td>
+            <td class="num">{{ e.consol_range_20 === null ? '—' : num(e.consol_range_20, 1) + '%' }}</td>
+            <td class="num">{{ e.dist_ma60 === null ? '—' : num(e.dist_ma60, 1) + '%' }}</td>
+            <td class="num">{{ num(e.breakout_ref, 3) }} / {{ num(e.ma20, 3) }}</td>
+            <td>
+              <span v-for="s in (e.signals || '').split(',').filter(Boolean)" :key="s" class="sig-pill">{{ s }}</span>
+            </td>
+          </tr>
+          <tr v-if="!(etfData.tier2 || []).length">
+            <td colspan="10" style="text-align:center;color:#9CA3AF;padding:24px">
+              {{ etfLoading ? '加载中…' : '当日暂无 Tier 2 右侧转折 ETF' }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 
   <!-- 策略管理 -->
   <section v-if="view==='strategy'" class="page">
@@ -999,7 +1114,15 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
               <div class="kl-row"><span>MACD DIF</span><b>{{ num(klDetail.indicator.macd_dif, 3) }}</b></div>
               <div class="kl-row"><span>RSI6</span><b>{{ num(klDetail.indicator.rsi6, 1) }}</b></div>
               <div class="kl-row"><span>KDJ K</span><b>{{ num(klDetail.indicator.kdj_k, 1) }}</b></div>
-              <div class="kl-row"><span>量比</span><b>{{ num(klDetail.indicator.vol_ratio, 2) }}</b></div>
+              <div class="kl-row"><span>5日量比</span><b>{{ num(klDetail.indicator.vol_ratio, 2) }}</b></div>
+              <div class="kl-row" v-if="klDetail.indicator.vol_ratio_20 != null"><span>20日量比</span><b>{{ num(klDetail.indicator.vol_ratio_20, 2) }}</b></div>
+              <div class="kl-row" v-if="klDetail.indicator.consol_range_20 != null"><span>20日振幅</span><b>{{ num(klDetail.indicator.consol_range_20, 1) }}%</b></div>
+              <div class="kl-row" v-if="klDetail.indicator.high_20d_prev != null"><span>突破参考(前20日高)</span><b>{{ num(klDetail.indicator.high_20d_prev, 2) }}</b></div>
+              <div class="kl-row" v-if="klDetail.indicator.ma20 != null"><span>防守位(MA20)</span><b>{{ num(klDetail.indicator.ma20, 2) }}</b></div>
+              <div class="kl-row" v-if="klDetail.indicator.bias_ma20 != null">
+                <span>MA20乖离</span>
+                <b :style="klDetail.indicator.bias_ma20 > 12 ? 'color:#B45309' : ''">{{ num(klDetail.indicator.bias_ma20, 1) }}%</b>
+              </div>
             </div>
           </template>
           <div class="kl-sec">财务趋势 <span class="hint">近 8 期 · 累计口径</span></div>
@@ -1250,6 +1373,11 @@ createApp({
       userDraft: { user_id: null, username: '', display_name: '', password: '', role: 'user', is_active: 1 },
       error: '',
       view: 'screen',
+      etfData: { trade_date: null, dates: [], tier1: [], tier2: [], scanning: false },
+      etfDate: '',
+      etfLoading: false,
+      etfScanning: false,
+      etfMsg: '',
       strategies: [],
       editing: null,
       flashMsg: '',
@@ -1316,7 +1444,8 @@ createApp({
         { key: 'quote', task: 'quote', name: '日线行情（增量）', desc: '从库中最大交易日的次日开始，日常更新用这个', action: '增量同步' },
         { key: 'quote_full', task: 'quote', start: '19900101', name: '日线行情（补历史）', desc: '从指定日期起补齐全市场历史，耗时取决于跨度', action: '补齐历史' },
         { key: 'financial', task: 'financial', name: '财务数据', desc: '全市场定期报告，约 2 小时；完成后自动重算指标', action: '同步' },
-        { key: 'indicator', task: 'indicator', name: '技术指标', desc: '行情变动后重算，空窗口行会被覆盖', action: '重算' }
+        { key: 'indicator', task: 'indicator', name: '技术指标', desc: '行情变动后重算，空窗口行会被覆盖', action: '重算' },
+        { key: 'etf_launch', task: 'etf_launch', name: 'ETF 启动信号扫描', desc: '扫描全市场成交额 ≥ 1.5 亿 A 股权益 ETF，交易日 18:15 自动执行', action: '立即扫描' }
       ]
     };
   },
@@ -1414,9 +1543,9 @@ createApp({
     }
 
     await this.loadMeta();
-    // 支持 #watch / #strategy / #data 直接打开对应页，可加书签
+    // 支持 #etf / #watch / #strategy / #data 直接打开对应页，可加书签
     const h = (location.hash || '').replace('#', '');
-    if (['strategy', 'watch', 'data', 'users'].indexOf(h) >= 0) this.switchView(h);
+    if (['etf', 'strategy', 'watch', 'data', 'users'].indexOf(h) >= 0) this.switchView(h);
     else this.applyTemplate();
 
     document.addEventListener('visibilitychange', () => {
@@ -2684,6 +2813,7 @@ createApp({
       }
       // 直接落在列表页时还没跑过筛选，切回工作台再补一次
       if (v === 'screen' && !(this.result.items || []).length) { this.applyTemplate(); return; }
+      if (v === 'etf') this.loadEtfSignals(this.etfDate);
       if (v === 'strategy') this.loadStrategies();
       if (v === 'watch') this.loadWatchlist();
       if (v === 'users') this.loadUsers();
@@ -2695,6 +2825,52 @@ createApp({
       } else {
         this.stopPolling();
       }
+    },
+    async loadEtfSignals(d) {
+      this.etfLoading = true;
+      try {
+        const qs = d ? ('?trade_date=' + encodeURIComponent(d)) : '';
+        const res = await this.api('/api/v1/etf/launch-signals' + qs);
+        this.etfData = res || { trade_date: null, dates: [], tier1: [], tier2: [], scanning: false };
+        this.etfDate = this.etfData.trade_date || '';
+        this.etfScanning = !!this.etfData.scanning;
+        if (this.etfScanning) this._pollEtfScan();
+      } catch (e) {
+        this.etfMsg = '加载失败：' + e.message;
+      } finally {
+        this.etfLoading = false;
+      }
+    },
+    async runEtfScan() {
+      this.etfScanning = true;
+      this.etfMsg = '已触发扫描，正在拉取全市场 ETF K 线…';
+      try {
+        const res = await this.api('/api/v1/etf/launch-signals/run', { method: 'POST' });
+        this.etfMsg = (res && res.message) || '扫描已启动，完成后将自动刷新';
+        this._pollEtfScan();
+      } catch (e) {
+        this.etfScanning = false;
+        this.etfMsg = '触发扫描失败：' + e.message;
+      }
+    },
+    _pollEtfScan() {
+      clearTimeout(this._etfPollTimer);
+      this._etfPollTimer = setTimeout(async () => {
+        if (this.view !== 'etf') return;
+        try {
+          const res = await this.api('/api/v1/etf/launch-signals');
+          this.etfData = res || this.etfData;
+          if (this.etfData.trade_date) this.etfDate = this.etfData.trade_date;
+          this.etfScanning = !!this.etfData.scanning;
+          if (this.etfScanning) {
+            this._pollEtfScan();
+          } else {
+            this.etfMsg = '扫描完成（Tier 1: ' + (this.etfData.tier1 || []).length + ' · Tier 2: ' + (this.etfData.tier2 || []).length + '）';
+          }
+        } catch (e) {
+          this.etfScanning = false;
+        }
+      }, 3000);
     },
     async loadStrategies() {
       try { this.strategies = (await this.api('/api/v1/strategies')).items; }

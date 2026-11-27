@@ -23,6 +23,9 @@ SELECT
   i.vol_ratio, i.vol_ma5,
   i.pct_chg_5d, i.pct_chg_20d, i.pct_chg_60d,
   i.high_60d, i.low_60d,
+  i.vol_ratio_20, i.boll_width_20, i.consol_range_20,
+  i.high_20d_prev, i.pocket_pivot, i.upper_shadow_ratio, i.bias_ma20,
+  q.open_price, q.high_price, q.low_price,
   q.close_price, q.pct_chg, q.pct_chg_adj, q.turnover_rate, q.amount, q.limit_status,
   s.stock_name, s.board, s.is_st, s.list_date, s.total_share, s.float_share,
   ROUND(q.close_price * s.total_share / 100000000, 4)  AS total_mv_yi,
@@ -144,6 +147,12 @@ def _build(trade_date):
     close_p = pd.to_numeric(df["close_price"], errors="coerce")
     df["drawdown_60d"] = ((high_60 - close_p) / high_60.replace(0, pd.NA) * 100).round(2)
     df["pct_from_low_60d"] = ((close_p - low_60) / low_60.replace(0, pd.NA) * 100).round(2)
+
+    # 成交额(亿元) 与 乖离率/上影线兜底
+    df["amount_yi"] = (pd.to_numeric(df["amount"], errors="coerce") / 1e8).round(3)
+    if "bias_ma20" not in df.columns or df["bias_ma20"].isna().all():
+        ma20_s = pd.to_numeric(df["ma20"], errors="coerce")
+        df["bias_ma20"] = ((close_p / ma20_s.replace(0, pd.NA) - 1) * 100).round(2)
 
     # 横截面相对强度：个股 20 日涨幅 - 全市场 20 日涨幅中位数
     pct_20 = pd.to_numeric(df["pct_chg_20d"], errors="coerce")

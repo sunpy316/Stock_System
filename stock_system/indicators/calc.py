@@ -22,12 +22,13 @@ def calc_technical(df: pd.DataFrame) -> pd.DataFrame:
     这类价格参与除法会产生 ±inf（PyMySQL 会拒绝写入），算出的指标本身也没有
     意义。因此只对「开高低收全部为正」的连续区间计算，其余位置输出 NaN。
     """
+    open_ = df["open_adj"].astype(float)
     close = df["close_adj"].astype(float)
     high = df["high_adj"].astype(float)
     low = df["low_adj"].astype(float)
     vol = df["volume"].astype(float)
 
-    valid = (close > 0) & (high > 0) & (low > 0)
+    valid = (open_ > 0) & (close > 0) & (high > 0) & (low > 0)
     if not valid.all():
         sub = df.iloc[valid.to_numpy().nonzero()[0]]
         if sub.empty:
@@ -99,6 +100,33 @@ def calc_technical(df: pd.DataFrame) -> pd.DataFrame:
     # ---------- 相对强度 ----------
     # 需要基准指数行情，指数采集完成前留空，避免用个股自身涨幅顶替
     out["rs_20d"] = np.nan
+
+    # ---------- 启动信号扩展指标（7项） ----------
+    vol_ma20 = vol.shift(1).rolling(20, min_periods=20).mean()
+    out["vol_ratio_20"] = vol / vol_ma20.replace(0, np.nan)
+
+    # 前1日布林带带宽(%)，用于衡量突破前的低波动收敛蓄势
+    boll_width_curr = (out["boll_up"] - out["boll_low"]) / out["boll_mid"].replace(0, np.nan) * 100
+    out["boll_width_20"] = boll_width_curr.shift(1)
+
+    high_20d_prev = high.shift(1).rolling(20, min_periods=20).max()
+    low_20d_prev = low.shift(1).rolling(20, min_periods=20).min()
+    out["high_20d_prev"] = high_20d_prev
+    out["consol_range_20"] = (high_20d_prev - low_20d_prev) / low_20d_prev.replace(0, np.nan) * 100
+
+    # 口袋支点：当日上涨且成交量大于近10个交易日所有下跌日的最大成交量
+    ret = close.pct_change()
+    down_vol = vol.where(ret < 0, 0.0)
+    max_down_vol_10 = down_vol.shift(1).rolling(10, min_periods=1).max()
+    out["pocket_pivot"] = ((ret > 0) & (max_down_vol_10 > 0) & (vol > max_down_vol_10)).astype(float)
+
+    # 上影线占比（过滤早盘急拉尾盘回落的钓鱼线）
+    day_range = (high - low).replace(0, np.nan)
+    body_top = pd.concat([open_, close], axis=1).max(axis=1)
+    out["upper_shadow_ratio"] = ((high - body_top) / day_range).fillna(0.0).clip(lower=0.0, upper=1.0)
+
+    # 20日乖离率(%)
+    out["bias_ma20"] = (close / out["ma20"].replace(0, np.nan) - 1) * 100
 
     # 兜底：任何列出现 ±inf（除数为 0 等极端情况）一律转 NaN，
     # 否则写入 MySQL 时 PyMySQL 会抛 "inf can not be used with MySQL"。

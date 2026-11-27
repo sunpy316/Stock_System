@@ -252,6 +252,20 @@ def run_screen(condition, trade_date=None, filters=None, sort_by="score", limit=
             "pct_chg_20d": _jsonable(row.get("pct_chg_20d")),
             "drawdown_60d": _jsonable(row.get("drawdown_60d")),
             "rs_20d": _jsonable(row.get("rs_20d")),
+            "vol_ratio": _jsonable(row.get("vol_ratio")),
+            "vol_ratio_20": _jsonable(row.get("vol_ratio_20")),
+            "consol_range_20": _jsonable(row.get("consol_range_20")),
+            "bias_ma20": _jsonable(row.get("bias_ma20")),
+            "pocket_pivot": _jsonable(row.get("pocket_pivot")),
+            "upper_shadow_ratio": _jsonable(row.get("upper_shadow_ratio")),
+            "breakout_ref": _jsonable(row.get("high_20d_prev")),
+            "stop_loss_ref": _jsonable(row.get("ma20")),
+            "low_price": _jsonable(row.get("low_price")),
+            "risk_tag": (
+                "偏离较大-宜等回踩"
+                if row.get("bias_ma20") is not None and pd.notna(row.get("bias_ma20")) and float(row.get("bias_ma20")) > 12.0
+                else ""
+            ),
             "limit_status": row.get("limit_status"),
             "score": _jsonable(row["score"]),
             "detail": detail,

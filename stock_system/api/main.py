@@ -29,9 +29,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .. import config, db
+from ..indicators.runner import ensure_indicator_columns
 from ..meta.pinyin import initials
 from ..screener import ScreenError, run_screen
 from ..screener import cross_section
+from ..screener.etf_launch import ensure_etf_table, query_etf_signals, run_etf_scan
 from ..screener.templates import INDICATOR_META, TEMPLATES
 from .exporter import export_run
 
@@ -186,8 +188,25 @@ def _run_daily_update():
         print(f"[daily] 更新失败（{int(time.time() - t0)}s）：{exc}", flush=True)
 
 
+def _run_etf_launch_job():
+    """定时任务：每个交易日 18:15 扫描全市场流动性 ETF 启动信号。"""
+    today = date.today()
+    if not _is_trading_day(today):
+        print(f"[etf-launch] {today} 非交易日，跳过", flush=True)
+        return
+    try:
+        res = run_etf_scan()
+        print(
+            f"[etf-launch] {today} 扫描完成：trade_date={res.get('trade_date')} "
+            f"Tier1={res.get('tier1')} Tier2={res.get('tier2')}",
+            flush=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[etf-launch] 扫描失败：{exc}", flush=True)
+
+
 def load_jobs():
-    """重建全部定时任务：策略 cron + 每日数据更新。"""
+    """重建全部定时任务：策略 cron + 每日数据更新 + ETF 启动信号扫描。"""
     scheduler.remove_all_jobs()
     df = db.query_df(
         "SELECT strategy_id, strategy_name, schedule_cron FROM dim_strategy "
@@ -218,6 +237,16 @@ def load_jobs():
         misfire_grace_time=3600,
         max_instances=1,
     )
+    scheduler.add_job(
+        _run_etf_launch_job,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=15,
+                    timezone="Asia/Shanghai"),
+        id="daily-etf-launch",
+        name="ETF启动信号扫描",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
     return len(scheduler.get_jobs())
 
 
@@ -243,6 +272,16 @@ async def lifespan(app: FastAPI):
         _ensure_user_table()
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] 初始化用户表失败：{exc}", flush=True)
+
+    try:
+        ensure_indicator_columns()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] 检查指标扩展列失败：{exc}", flush=True)
+
+    try:
+        ensure_etf_table()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] 初始化 ETF 启动信号表失败：{exc}", flush=True)
 
     scheduler.start()
     try:
@@ -356,7 +395,7 @@ async def auth_guard(request: Request, call_next):
     request.state.user = {"sub": config.AUTH_USERNAME, "role": "admin"}
     if request.method == "OPTIONS":
         return await call_next(request)
-    if config.AUTH_ENABLED and request.url.path.startswith("/api/v1/") and request.url.path != "/api/v1/auth/login":
+    if config.AUTH_ENABLED and request.url.path.startswith("/api/") and request.url.path != "/api/v1/auth/login":
         auth = request.headers.get("Authorization", "")
         token = auth[7:].strip() if auth.startswith("Bearer ") else ""
         payload = _verify_token(token) if token else None
@@ -878,6 +917,7 @@ def _task_spec(task: str, start=None, limit=None):
         "financial": ("同步财务数据", lambda: sync_financial(skip_existing=True)),
         "financial_full": ("全量刷新财报", lambda: sync_financial(skip_existing=False)),
         "indicator": ("重算技术指标", lambda: calc_indicator(start=start)),
+        "etf_launch": ("ETF启动信号扫描", lambda: run_etf_scan()),
     }
     return spec.get(task)
 
@@ -1487,6 +1527,38 @@ def market_sentiment(trade_date: Optional[str] = None):
             "suggestion": tip,
         }
     }
+
+
+@app.get("/api/v1/etf/launch-signals")
+@app.get("/api/etf/launch-signals")
+def get_etf_launch_signals(trade_date: Optional[str] = None):
+    """查询 ETF 启动信号（默认返回最新扫描交易日，按 Tier1 / Tier2 分组）。"""
+    try:
+        res = query_etf_signals(trade_date=trade_date)
+        with _TASK_LOCK:
+            res["scanning"] = "etf_launch" in _TASK_RUNNING
+        return res
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/v1/etf/launch-signals/run")
+@app.post("/api/etf/launch-signals/run")
+def trigger_etf_launch_scan(min_amt_yi: float = 1.5):
+    """手动触发一次 ETF 启动信号扫描（后台线程异步执行）。"""
+    with _TASK_LOCK:
+        if "etf_launch" in _TASK_RUNNING:
+            return {"ok": True, "already_running": True, "message": "ETF 启动信号扫描正在进行中"}
+        _TASK_RUNNING["etf_launch"] = datetime.now().isoformat()
+
+    t = threading.Thread(
+        target=_run_task_thread,
+        args=("etf_launch", lambda: run_etf_scan(min_amt_yi=min_amt_yi)),
+        name="task-etf-launch",
+        daemon=True,
+    )
+    t.start()
+    return {"ok": True, "started": True, "message": "已启动 ETF 启动信号扫描，请稍候刷新"}
 
 
 @app.get("/health")

@@ -16,9 +16,46 @@ COLS = [
     "vol_ratio", "vol_ma5",
     "pct_chg_5d", "pct_chg_20d", "pct_chg_60d",
     "high_60d", "low_60d", "rs_20d",
+    "vol_ratio_20", "boll_width_20", "consol_range_20",
+    "high_20d_prev", "pocket_pivot", "upper_shadow_ratio", "bias_ma20",
 ]
 
 UPDATE_COLS = [c for c in COLS if c not in ("stock_code", "trade_date")]
+
+EXTRA_COLUMN_DDLS = [
+    ("vol_ratio_20", "DECIMAL(10,3) DEFAULT NULL COMMENT '20日量比'"),
+    ("boll_width_20", "DECIMAL(10,3) DEFAULT NULL COMMENT '前1日布林带带宽(%)'"),
+    ("consol_range_20", "DECIMAL(10,3) DEFAULT NULL COMMENT '近20日平台振幅(%)'"),
+    ("high_20d_prev", "DECIMAL(14,4) DEFAULT NULL COMMENT '前20日最高价(前复权)'"),
+    ("pocket_pivot", "TINYINT DEFAULT NULL COMMENT '口袋支点(0/1)'"),
+    ("upper_shadow_ratio", "DECIMAL(8,4) DEFAULT NULL COMMENT '上影线占比(0-1)'"),
+    ("bias_ma20", "DECIMAL(10,3) DEFAULT NULL COMMENT '20日乖离率(%)'"),
+]
+
+
+def ensure_indicator_columns():
+    """幂等补齐 fact_indicator_daily 启动信号扩展列（MySQL 8.0 INSTANT 毫秒完成）。"""
+    from sqlalchemy import text
+
+    with db.engine.begin() as conn:
+        existing = {
+            r[0]
+            for r in conn.execute(
+                text(
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fact_indicator_daily'"
+                )
+            ).fetchall()
+        }
+        missing = [(col, ddl) for col, ddl in EXTRA_COLUMN_DDLS if col not in existing]
+        if not missing:
+            return 0
+        adds = ", ".join(f"ADD COLUMN `{col}` {ddl}" for col, ddl in missing)
+        try:
+            conn.execute(text(f"ALTER TABLE fact_indicator_daily {adds}, ALGORITHM=INSTANT"))
+        except Exception:  # noqa: BLE001
+            conn.execute(text(f"ALTER TABLE fact_indicator_daily {adds}"))
+        return len(missing)
 
 
 def _n(v):
@@ -94,6 +131,7 @@ def run(start=None, end=None, codes=None, batch=120, progress_every=5):
     几十 MB，2GB 云机可承受；调到 300 会到 70 万行，内存压力翻倍，非必要别动。
     """
     start, end = _d(start), _d(end)
+    ensure_indicator_columns()
 
     # 预热窗口：均线最长 250 根，MACD/RSI 也需要前置数据。
     # 只加载 >= start 会让单日重算拿到 1 根 K 线，全部算成 NULL。
