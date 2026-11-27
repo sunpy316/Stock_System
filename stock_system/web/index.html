@@ -424,6 +424,14 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
 .pool-tab.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
 .reason-cell{max-width:280px;font-size:12px;line-height:1.45;color:#334155;white-space:normal}
 .reason-sub{font-size:11px;color:#64748B;margin-top:2px}
+.kf-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:6px 0 4px;padding:6px 10px;
+  background:#F8FAFC;border:1px solid var(--border);border-radius:6px;font-size:11.5px;color:#475569}
+.kf-leg-grp{color:#94A3B8;font-size:11px;font-weight:600}
+.kf-leg-item{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.kf-leg-line{display:inline-block;width:14px;height:0;border-top:2px solid currentColor}
+.kf-leg-line.dashed{border-top-style:dashed}
+.kf-leg-line.dotted{border-top-style:dotted}
+.kf-leg-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor}
 @media (max-width: 768px){
   body{height:auto;min-height:100vh;overflow-y:auto;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   #app{overflow:visible}
@@ -1285,6 +1293,22 @@ footer{height:26px;flex:0 0 26px;background:#FAFBFC;border-top:1px solid var(--b
                    @keyup.enter="addCustomPeriod($event, i)">
           </div>
         </div>
+        <div class="kf-legend" v-if="klineLegend.main.length || klineLegend.sub.length">
+          <template v-if="klineLegend.main.length">
+            <span class="kf-leg-grp">主图</span>
+            <span class="kf-leg-item" v-for="(it, idx) in klineLegend.main" :key="'lm-' + idx">
+              <i :class="it.dot ? 'kf-leg-dot' : ('kf-leg-line ' + (it.style || ''))" :style="{ color: it.color }"></i>
+              <span>{{ it.label }}</span>
+            </span>
+          </template>
+          <template v-if="klineLegend.sub.length">
+            <span class="kf-leg-grp" style="margin-left:4px">副图</span>
+            <span class="kf-leg-item" v-for="(it, idx) in klineLegend.sub" :key="'ls-' + idx">
+              <i :class="it.dot ? 'kf-leg-dot' : ('kf-leg-line ' + (it.style || ''))" :style="{ color: it.color }"></i>
+              <span>{{ it.label }}</span>
+            </span>
+          </template>
+        </div>
         <div ref="fullchart" class="kf-chart" :style="{ width: '100%', height: klineOpts.sub ? '520px' : '468px' }"></div>
         <div class="kf-tip">滚轮缩放、拖拽平移；下方滑块拖到最左即可看到最早一根 K 线。悬浮可看开收低高、成交量与成交额。</div>
         </div>
@@ -1740,6 +1764,71 @@ createApp({
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       return `${d.getFullYear()}-${m}-${day}`;
+    },
+    klineLegend() {
+      const opt = this.klineOpts || { ov: [], sub: '', subP: {} };
+      const ov = opt.ov || [];
+      const ovParams = k => {
+        const it = ov.find(o => o.k === k);
+        return it ? (it.p || []) : [];
+      };
+      const has = k => !!ov.find(o => o.k === k);
+      const main = [];
+      const sub = [];
+      const MA_COLOR = { 5: '#F9A825', 10: '#26A69A', 20: '#1565C0', 60: '#7E57C2', 120: '#EF6C00', 250: '#546E7A' };
+      ovParams('MA').forEach(p => main.push({ label: 'MA' + p, color: MA_COLOR[p] || '#607D8B' }));
+      if (has('BOLL')) {
+        main.push({ label: 'BOLL上/下轨', color: '#8E24AA', style: 'dashed' });
+        main.push({ label: 'BOLL中轨', color: '#00838F' });
+      }
+      if (has('BBI')) main.push({ label: 'BBI', color: '#EF6C00' });
+      const EMA_COLOR = { 12: '#F9A825', 25: '#26A69A', 50: '#1565C0' };
+      ovParams('EXPMA').forEach(p => main.push({ label: 'EMA' + p, color: EMA_COLOR[p] || '#607D8B' }));
+      if (has('HH60')) {
+        main.push({ label: '60日高', color: '#C62828', style: 'dashed' });
+        main.push({ label: '60日低', color: '#2E7D32', style: 'dashed' });
+      }
+      ovParams('ENV').forEach(p => main.push({ label: 'ENV±' + p + '%', color: '#6D4C41', style: 'dotted' }));
+      if (has('SAR')) {
+        main.push({ label: 'SAR多头', color: '#D32F2F', dot: true });
+        main.push({ label: 'SAR空头', color: '#2E7D32', dot: true });
+      }
+      if (has('GUPPY')) {
+        main.push({ label: '顾比短期(3-15)', color: '#EF6C00' });
+        main.push({ label: '顾比长期(30-60)', color: '#1E88E5' });
+      }
+      if (has('DONCH')) {
+        main.push({ label: '唐奇安上轨', color: '#C62828', style: 'dashed' });
+        main.push({ label: '唐奇安下轨', color: '#2E7D32', style: 'dashed' });
+      }
+      if (has('KELT')) {
+        main.push({ label: 'KELT上/下轨', color: '#5C6BC0', style: 'dotted' });
+        main.push({ label: 'KELT中轨', color: '#3949AB' });
+      }
+      if (has('VWAP')) main.push({ label: 'VWAP', color: '#F4511E' });
+
+      if (opt.sub === 'MACD') {
+        sub.push({ label: 'DIF', color: '#F9A825' });
+        sub.push({ label: 'DEA', color: '#1565C0' });
+        sub.push({ label: '红/绿柱(MACD)', color: '#D32F2F', dot: true });
+      } else if (opt.sub === 'KDJ') {
+        sub.push({ label: 'K', color: '#F9A825' });
+        sub.push({ label: 'D', color: '#1565C0' });
+        sub.push({ label: 'J', color: '#7E57C2' });
+      } else if (opt.sub === 'RSI') {
+        const RSI_C = { 6: '#F9A825', 12: '#1565C0', 24: '#7E57C2' };
+        const pick = (opt.subP && opt.subP.RSI && opt.subP.RSI.length) ? opt.subP.RSI : [6, 12, 24];
+        pick.forEach(p => sub.push({ label: 'RSI' + p, color: RSI_C[p] || '#607D8B' }));
+      } else if (opt.sub === 'ATR') {
+        sub.push({ label: 'ATR14', color: '#8D6E63' });
+      } else if (opt.sub === 'VOLR') {
+        sub.push({ label: '量比', color: '#00897B' });
+      } else if (opt.sub === 'PCT') {
+        const PCT_C = { 5: '#F9A825', 20: '#1565C0', 60: '#7E57C2' };
+        const pick = (opt.subP && opt.subP.PCT && opt.subP.PCT.length) ? opt.subP.PCT : [20];
+        pick.forEach(p => sub.push({ label: p + '日涨幅', color: PCT_C[p] || '#607D8B' }));
+      }
+      return { main, sub };
     }
   },
   watch: {
